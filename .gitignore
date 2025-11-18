@@ -1,0 +1,9 @@
+.venv/
+
+.env
+
+# db 
+*db*
+
+# 생성된 pdf
+*.pdf

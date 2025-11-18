@@ -1,0 +1,21 @@
+langchain==0.3.26
+langchain-chroma==0.2.5
+langchain-community==0.3.27
+langchain-huggingface==0.3.1
+langchain-openai==0.3.28
+sentence-transformers==5.0.0
+transformers==4.53.3
+
+python-dotenv
+chromadb
+PyMuPDF
+PyPDF2
+reportlab
+
+# tesserect ocr 
+pytesseract
+pillow
+
+# paddle ocr
+paddleocr
+paddlepaddle
