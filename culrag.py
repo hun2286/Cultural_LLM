@@ -37,23 +37,18 @@ def pdf_to_markdown(pdf_path):
     try:
         with fitz.open(pdf_path) as pdf:
             for i, page in enumerate(pdf):
-                blocks = page.get_text("blocks")
-                blocks = sorted(blocks, key=lambda b: (b[1], b[0]))
-                page_text = ""
-                for block in blocks:
-                    text = block[4].strip()
-                    if not text:
-                        continue
-                    num_words = len(text.split())
-                    num_lines = text.count("\n") + 1
-                    if num_words <= 5 and num_lines <= 2:
-                        page_text += f"# {text}\n\n"
-                    elif num_words <= 15:
-                        page_text += f"## {text}\n\n"
-                    else:
-                        page_text += f"{text}\n\n"
-                md_text += f"# Page {i + 1}\n\n{page_text}"
+                # ★ 블록 대신 전체 텍스트 한 번에 추출
+                page_text = page.get_text("text")
+
+                # 페이지 헤더 추가
+                md_text += f"# Page {i + 1}\n\n"
+
+                # 그대로 본문 추가
+                if page_text.strip():
+                    md_text += page_text + "\n\n"
+
         return md_text
+
     except Exception:
         print(f"[오류] PDF 변환 실패 : {pdf_path}") 
         return ""
