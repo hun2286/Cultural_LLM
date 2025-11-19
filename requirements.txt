@@ -19,3 +19,7 @@ pillow
 # paddle ocr
 paddleocr
 paddlepaddle
+
+#
+bitsandbytes
+accelerate>=0.26.0
