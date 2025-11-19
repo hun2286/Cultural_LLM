@@ -18,7 +18,7 @@ load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
 # 문화유산 폴더 경로
-pdf_folder = r"C:\Users\user\Desktop\pdfs\유산청pdf자료\문화유산"
+pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/문화유산"
 persist_dir = "./Cultural_db"
 
 # LLM / 임베딩 설정
@@ -39,7 +39,7 @@ def pdf_to_markdown(pdf_path):
     try:
         with fitz.open(pdf_path) as pdf:
             for i, page in enumerate(pdf):
-                # ★ 블록 대신 전체 텍스트 한 번에 추출
+                # 블록 대신 전체 텍스트 한 번에 추출
                 page_text = page.get_text("text")
 
                 # 페이지 헤더 추가
