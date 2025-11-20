@@ -8,28 +8,26 @@ import torch
 from dotenv import load_dotenv
 from typing import Optional, Union
 
-# LangChain
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 
-# HuggingFace + LangChain Pipeline
 from langchain_huggingface import HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-# Gemma-3 모델 로더
+
 def load_hf_causal_lm_pipeline(
-        repo_id : str,
-        model_dir : Optional[Union[str, os.PathLike]] = None,
-        task : str = "text-generation",
-        max_new_tokens : int = 1024,
-        temperature : float = 0.6,
-        top_p : float = 0.9,
-        top_k : int = 20,
-        repetition_penalty : float = 1.2,
-        torch_dtype = torch.bfloat16,
-        expose_prompt : bool = False
+        repo_id: str,
+        model_dir: Optional[Union[str, os.PathLike]] = None,
+        task: str = "text-generation",
+        max_new_tokens: int = 1024,
+        temperature: float = 0.3,
+        top_p: float = 0.9,
+        top_k: int = 20,
+        repetition_penalty: float = 1.2,
+        torch_dtype=torch.bfloat16,
+        expose_prompt: bool = False
 ):
     hostname = socket.gethostname()
     if hostname == 'ubuntu' and model_dir is None:
@@ -63,39 +61,30 @@ def load_hf_causal_lm_pipeline(
 # 환경 설정
 load_dotenv()
 
-pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/문화유산"
-persist_dir = "./Cultural_db"
+pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/무형유산"
+persist_dir = "./Intangible_db"
 
-# Gemma-3 로컬 모델 설정
 print("Gemma-3 로딩 중...")
-
 llm = load_hf_causal_lm_pipeline(
-    repo_id="unsloth/gemma-3-12b-it-bnb-4bit",
-    max_new_tokens=1024,
-    temperature=0.3
+    repo_id="unsloth/gemma-3-12b-it-bnb-4bit"
 )
-
 print("Gemma-3 초기화 완료!")
 
-# 임베딩 모델
 embedding_model = HuggingFaceEmbeddings(
     model_name="bespin-global/klue-sroberta-base-continue-learning-by-mnr"
 )
 
-# PDF → Markdown 변환
+
 def pdf_to_markdown(pdf_path):
     md_text = ""
     try:
         with fitz.open(pdf_path) as pdf:
             for i, page in enumerate(pdf):
                 page_text = page.get_text("text")
-
                 md_text += f"# Page {i + 1}\n\n"
                 if page_text.strip():
                     md_text += page_text + "\n\n"
-
         return md_text
-
     except Exception:
         print(f"[오류] PDF 변환 실패 : {pdf_path}")
         return ""
@@ -110,11 +99,10 @@ def load_pdf_safe(pdf_path):
         metadata={"source": os.path.splitext(os.path.basename(pdf_path))[0]}
     )]
 
-# 재귀 탐색 PDF 로딩
+
 def load_all_pdfs_recursive(root_folder):
     all_docs = []
     failed_pdfs = []
-
     for dirpath, dirnames, filenames in os.walk(root_folder):
         pdf_files = [f for f in filenames if f.lower().endswith(".pdf")]
         for pdf_file in pdf_files:
@@ -132,13 +120,12 @@ def load_all_pdfs_recursive(root_folder):
                 failed_pdfs.append(pdf_path)
 
     print(f"\n총 Document 수: {len(all_docs)}")
-
     if failed_pdfs:
         print("\n--- 텍스트 변환 실패 PDF ---")
         for f in failed_pdfs:
             print("-", f)
-
     return all_docs
+
 
 # VectorDB 생성/로드
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
@@ -162,7 +149,6 @@ if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
         print("임베딩 완료!")
     else:
         vectorstore = None
-
 else:
     print("기존 DB 사용")
     vectorstore = Chroma(
@@ -175,16 +161,20 @@ retriever = vectorstore.as_retriever(
     search_kwargs={"k": 3}
 ) if vectorstore else None
 
-# Gemma-3 IT RAG 질의응답
+
 def build_gemma_prompt(context, question):
     return f"""
 <start_of_turn>system
 당신은 여러 PDF 문서를 참고하여 질문에 답하는 전문가입니다.
+- '아래는 ~에 대한 정보입니다.' 또는 유사한 서두 문구는 절대 쓰지 마세요.
 - 문서 내용만 활용해 답변하세요.
 - 문서에 없는 내용은 '정보 없음'이라고 하세요.
-- 최소 300단어 이상 작성하세요.
+- 각 항목은 제목 내용 한 줄 빈 줄 순서로 작성하세요.
+- 답변에는 한글을 기본으로 사용하세요.
+- 최소 100단어 이상 사용해서 답변하세요
+- 각 문단 제목은 질문형으로 만들지 말고, 'OO 소개' 또는 'OO 개요' 형태로 작성하세요.
+- 각 문단마다 반드시 사용된 PDF 출처를 [출처: PDF 제목] 형태로 문장 마지막에 표기하세요.
 <end_of_turn>
-
 <start_of_turn>user
 문서 내용:
 {context}
@@ -197,6 +187,9 @@ def build_gemma_prompt(context, question):
 """.strip()
 
 
+# -------------------------
+# 출처 추출 후 마지막에 모아서 출력하는 RAG 함수
+# -------------------------
 def rag_answer(question):
     if not retriever:
         return "DB가 없습니다. 먼저 문서를 임베딩하세요."
@@ -205,53 +198,37 @@ def rag_answer(question):
     if isinstance(retriever_docs, Document):
         retriever_docs = [retriever_docs]
 
-    context_text = "\n\n".join([
-        doc.page_content.strip()
-        for doc in retriever_docs if doc.page_content.strip()
-    ])
+    context_chunks = []
+    for doc in retriever_docs:
+        text = doc.page_content.strip()
+        if text:
+            # 각 문서의 source를 맨 끝에 [출처: ...] 형태로 붙임
+            text_with_source = f"{text}\n[출처: {doc.metadata.get('source', '출처 없음')}]"
+            context_chunks.append(text_with_source)
 
-    # Gemma-3 프롬프트 생성
+    context_text = "\n\n".join(context_chunks)
     prompt = build_gemma_prompt(context_text, question)
-
-    # LLM 호출
     response = llm.invoke(prompt)
     answer = response.strip()
 
-    # 후처리
-    lines = answer.split("\n")
-    cleaned = []
-    prev_empty = False
+    # -------------------------
+    # 문단 마지막 출처 그대로 가져오기
+    # -------------------------
+    source_pattern = r"\[출처:.*?\]"
+    sources_raw = re.findall(source_pattern, answer)
+    # 중복 제거
+    final_sources = list(dict.fromkeys(sources_raw))
+    # 문단에서 출처 제거
+    cleaned_answer = re.sub(source_pattern, "", answer).strip()
 
-    for line in lines:
-        s = line.strip()
-        if not s:
-            if not prev_empty:
-                cleaned.append("")
-            prev_empty = True
-        else:
-            s = re.sub(r"^[#*\d\.\s]+", "", s)
-            s = s.replace("**", "")
-            cleaned.append(s)
-            prev_empty = False
+    if final_sources:
+        final_output = f"{cleaned_answer}\n\n{'-'*60}\n[출처]\n" + "\n".join(final_sources)
+    else:
+        final_output = f"{cleaned_answer}\n\n[출처]\n정보 없음"
 
-    cleaned_answer = "\n".join(cleaned).strip()
-    if not cleaned_answer:
-        cleaned_answer = "정보 없음"
+    return final_output
 
-    # 출처
-    used_sources = []
-    for d in retriever_docs:
-        src = d.metadata.get("source", "출처 없음")
-        if src not in used_sources:
-            used_sources.append(src)
 
-    output = cleaned_answer + "\n\n" + "-"*60 + "\n"
-    for s in used_sources:
-        output += f"[출처: {s}]\n"
-
-    return output.strip()
-
-# 타이핑 출력
 def typewriter_print(text, delay=0.02):
     for char in text:
         sys.stdout.write(char)
@@ -259,7 +236,7 @@ def typewriter_print(text, delay=0.02):
         time.sleep(delay)
     print()
 
-# 실행
+
 if __name__ == "__main__":
     print("=" * 60)
     print("Gemma-3 RAG 질의응답 시스템")
