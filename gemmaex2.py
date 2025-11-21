@@ -17,14 +17,12 @@ from langchain_huggingface import HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 
-# =======================
 # LLM 파이프라인 로드
-# =======================
 def load_hf_causal_lm_pipeline(
         repo_id: str,
         model_dir: Optional[Union[str, os.PathLike]] = None,
         task: str = "text-generation",
-        max_new_tokens: int = 1024,
+        max_new_tokens: int = 2048,
         temperature: float = 0.3,
         top_p: float = 0.9,
         top_k: int = 20,
@@ -60,10 +58,7 @@ def load_hf_causal_lm_pipeline(
     )
     return HuggingFacePipeline(pipeline=pipe)
 
-
-# =======================
 # 환경 변수 로드
-# =======================
 load_dotenv()
 
 pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/문화유산"
@@ -79,10 +74,7 @@ embedding_model = HuggingFaceEmbeddings(
     model_name="bespin-global/klue-sroberta-base-continue-learning-by-mnr"
 )
 
-
-# =======================
 # PDF 텍스트 전처리
-# =======================
 def clean_text(text):
     text = re.sub(r'\s+', ' ', text)  # 연속 공백 제거
     text = re.sub(r',,+', ',', text)  # 쉼표 연속 제거
@@ -140,10 +132,7 @@ def load_all_pdfs_recursive(root_folder):
             print("-", f)
     return all_docs
 
-
-# =======================
 # VectorDB 생성/로드
-# =======================
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
     print("DB 새로 생성합니다...")
     docs = load_all_pdfs_recursive(pdf_folder)
@@ -177,10 +166,7 @@ retriever = vectorstore.as_retriever(
     search_kwargs={"k": 3}
 ) if vectorstore else None
 
-
-# =======================
 # Gemma-3 Prompt 빌드
-# =======================
 def build_gemma_prompt(context, question):
     return f"""
 <start_of_turn>system
@@ -209,10 +195,7 @@ def build_gemma_prompt(context, question):
 <start_of_turn>model
 """.strip()
 
-
-# =======================
 # RAG 질의응답
-# =======================
 def rag_answer(question):
     if not retriever:
         return "DB가 없습니다. 먼저 문서를 임베딩하세요."
@@ -260,10 +243,7 @@ def rag_answer(question):
 
     return final_output
 
-
-# =======================
 # 실행
-# =======================
 if __name__ == "__main__":
     print("=" * 60)
     print("Gemma-3 RAG 질의응답 시스템")
