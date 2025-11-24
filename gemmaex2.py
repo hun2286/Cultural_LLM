@@ -226,6 +226,7 @@ def rag_answer(question):
     response = llm.invoke(prompt)
     answer = response.strip()
 
+    # 문단 내부 출처 삭제를 위한 정규식 한 줄 정규식보다 안정성이 높아서 채택
     cleaned_answer = answer
     while True:
         new_answer = re.sub(r'\[출처:\s*(?:[^\[\]]+|\[[^\]]*\])*\]', '', cleaned_answer)
@@ -233,7 +234,7 @@ def rag_answer(question):
             break
         cleaned_answer = new_answer
 
-    # 남아 있는 연속 닫는 대괄호 제거
+    # 남아 있는 연속 닫는 대괄호 제거 (혹시 모를 변수에 대비해 남겨둠)
     cleaned_answer = re.sub(r'\]+', '', cleaned_answer)
 
     # 연속 줄바꿈 제거
