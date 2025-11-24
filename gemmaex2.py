@@ -78,9 +78,15 @@ embedding_model = HuggingFaceEmbeddings(
 
 # PDF 텍스트 전처리
 def clean_text(text):
-    text = re.sub(r'\s+', ' ', text)  # 연속 공백 제거
-    text = re.sub(r',,+', ',', text)  # 쉼표 연속 제거
-    text = re.sub(r'([.!?])\s+', r'\1\n', text)  # 문장 단위 줄바꿈
+    # 연속 공백 제거
+    text = re.sub(r'\s+', ' ', text)
+    # 쉼표 연속 제거
+    text = re.sub(r',,+', ',', text)
+    # 문장 단위 줄바꿈
+    text = re.sub(r'([.!?])\s+', r'\1\n', text)
+    # 문단 끝 쉼표 제거
+    text = re.sub(r'\s*,\s*\n', '\n', text)  # 줄바꿈 직전 쉼표 제거
+    # 문단 시작/끝 공백 제거
     return text.strip()
 
 
@@ -207,6 +213,7 @@ def rag_answer(question):
     if isinstance(retriever_docs, Document):
         retriever_docs = [retriever_docs]
 
+    # 문서 내용에 출처 붙이기
     context_chunks = []
     for doc in retriever_docs:
         text = doc.page_content.strip()
@@ -219,11 +226,24 @@ def rag_answer(question):
     response = llm.invoke(prompt)
     answer = response.strip()
 
-    # 문단 마지막 출처 추출
+    cleaned_answer = answer
+    while True:
+        new_answer = re.sub(r'\[출처:\s*(?:[^\[\]]+|\[[^\]]*\])*\]', '', cleaned_answer)
+        if new_answer == cleaned_answer:  # 더 이상 제거할 게 없으면 종료
+            break
+        cleaned_answer = new_answer
+
+    # 남아 있는 연속 닫는 대괄호 제거
+    cleaned_answer = re.sub(r'\]+', '', cleaned_answer)
+
+    # 연속 줄바꿈 제거
+    cleaned_answer = re.sub(r'\n{2,}', '\n\n', cleaned_answer).strip()
+
+    # 문단 끝 출처 추출
     source_pattern = r"\[출처:\s*(.*?)\](?=\s|$)"
     sources_raw = re.findall(source_pattern, answer)
 
-    # 쉼표/세미콜론으로 나누어 개별 출처 처리
+    # 쉼표/세미콜론, 괄호 처리 후 개별 출처
     all_sources = []
     for s in sources_raw:
         s = re.sub(r"[&|/]", ",", s)
@@ -231,14 +251,11 @@ def rag_answer(question):
         parts = [p.replace('<<comma>>', ',').strip() for p in parts if p.strip()]
         all_sources.extend(parts)
 
-    # 중복 제거
+    # 중복 제거 및 정렬
     final_sources_set = set(all_sources)
     final_sources = [f"[출처: {s}]" for s in sorted(final_sources_set)]
 
-    # 문단에서 출처 제거
-    cleaned_answer = re.sub(r'\[출처:.*?\]\s*(?=\n|$)', '\n', answer)
-    cleaned_answer = cleaned_answer.rstrip()
-
+    # 최종 출력
     if final_sources:
         final_output = f"{cleaned_answer}\n\n{'-'*60}\n" + "\n".join(final_sources)
     else:
