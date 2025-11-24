@@ -58,6 +58,7 @@ def load_hf_causal_lm_pipeline(
     )
     return HuggingFacePipeline(pipeline=pipe)
 
+
 # 환경 변수 로드
 load_dotenv()
 
@@ -73,6 +74,7 @@ print("Gemma-3 초기화 완료!")
 embedding_model = HuggingFaceEmbeddings(
     model_name="bespin-global/klue-sroberta-base-continue-learning-by-mnr"
 )
+
 
 # PDF 텍스트 전처리
 def clean_text(text):
@@ -132,6 +134,7 @@ def load_all_pdfs_recursive(root_folder):
             print("-", f)
     return all_docs
 
+
 # VectorDB 생성/로드
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
     print("DB 새로 생성합니다...")
@@ -166,20 +169,19 @@ retriever = vectorstore.as_retriever(
     search_kwargs={"k": 3}
 ) if vectorstore else None
 
+
 # Gemma-3 Prompt 빌드
 def build_gemma_prompt(context, question):
     return f"""
 <start_of_turn>system
 당신은 여러 PDF 문서를 참고하여 질문에 답하는 전문가입니다.
-- '아래는 ~에 대한 정보입니다.' 또는 유사한 서두 문구는 절대 쓰지 마세요.
 - 문서 내용만 활용해 답변하세요.
 - 문서에 없는 내용은 '정보 없음'이라고 하세요.
 - 각 항목은 제목 내용 한 줄 빈 줄 순서로 작성하세요.
-- 제목이나 문단 시작에 형용사(아름다운, 경이로룬 등)을 사용하지마세요. 단순한 사실적 제목만 쓰세요.
 - 답변에는 한글을 기본으로 사용하세요.
 - 최소 100단어 이상 사용해서 답변하세요
 - 각 문단 제목은 질문형으로 만들지 말고, 'OO 소개' 또는 'OO 개요' 형태로 작성하세요.
-- 각 문단마다 반드시 사용된 PDF 출처를 [출처: PDF 제목] 형태로 문장 마지막에 표기하세요.
+- 각 문단마다 반드시 사용된 PDF 출처를 [출처: PDF 제목] 형태로 문단 마지막에 표기하세요.
 - 문장 중간에 쉼표가 두 개 이상 연속되면 하나로 줄이세요.
 - 문단과 문단 사이에 불필요한 쉼표가 있으면 제거하세요.
 - 가능하면 문장 끝에는 마침표나 줄바꿈으로 마무리하세요.
@@ -195,6 +197,7 @@ def build_gemma_prompt(context, question):
 <start_of_turn>model
 """.strip()
 
+
 # RAG 질의응답
 def rag_answer(question):
     if not retriever:
@@ -208,7 +211,6 @@ def rag_answer(question):
     for doc in retriever_docs:
         text = doc.page_content.strip()
         if text:
-            # 각 문서의 source를 맨 끝에 [출처: ...] 형태로 붙임
             text_with_source = f"{text}\n[출처: {doc.metadata.get('source', '출처 없음')}]"
             context_chunks.append(text_with_source)
 
@@ -218,23 +220,24 @@ def rag_answer(question):
     answer = response.strip()
 
     # 문단 마지막 출처 추출
-    source_pattern = r"\[출처:\s*(.*?)\]"
+    source_pattern = r"\[출처:\s*(.*?)\](?=\s|$)"
     sources_raw = re.findall(source_pattern, answer)
 
     # 쉼표/세미콜론으로 나누어 개별 출처 처리
     all_sources = []
     for s in sources_raw:
         s = re.sub(r"[&|/]", ",", s)
-
-        parts = re.split(r"[;,]", s)
-        all_sources.extend([p.strip() for p in parts if p.strip()])
+        parts = re.split(r',|;', re.sub(r'\([^)]*\)', lambda m: m.group(0).replace(',', '<<comma>>'), s))
+        parts = [p.replace('<<comma>>', ',').strip() for p in parts if p.strip()]
+        all_sources.extend(parts)
 
     # 중복 제거
     final_sources_set = set(all_sources)
     final_sources = [f"[출처: {s}]" for s in sorted(final_sources_set)]
 
     # 문단에서 출처 제거
-    cleaned_answer = re.sub(r"\[출처:.*?\]", "", answer).strip()
+    cleaned_answer = re.sub(r'\[출처:.*?\]\s*(?=\n|$)', '\n', answer)
+    cleaned_answer = cleaned_answer.rstrip()
 
     if final_sources:
         final_output = f"{cleaned_answer}\n\n{'-'*60}\n" + "\n".join(final_sources)
@@ -242,6 +245,7 @@ def rag_answer(question):
         final_output = f"{cleaned_answer}\n\n{'-'*60}\n정보 없음"
 
     return final_output
+
 
 # 실행
 if __name__ == "__main__":
