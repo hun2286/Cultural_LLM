@@ -61,8 +61,8 @@ def load_hf_causal_lm_pipeline(
 # 환경 변수 로드
 load_dotenv()
 
-pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/문화유산"
-persist_dir = "./Cultural_db"
+pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/무형유산"
+persist_dir = "./Intangible_db"
 
 print("Gemma-3 로딩 중...")
 llm = load_hf_causal_lm_pipeline(
