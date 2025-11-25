@@ -61,8 +61,8 @@ def load_hf_causal_lm_pipeline(
 # 환경 설정
 load_dotenv()
 
-pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/무형유산"
-persist_dir = "./Intangible_db"
+pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/문화유산"
+persist_dir = "./Cultural_db"
 
 print("Gemma-3 로딩 중...")
 llm = load_hf_causal_lm_pipeline(
@@ -79,11 +79,10 @@ def pdf_to_markdown(pdf_path):
     md_text = ""
     try:
         with fitz.open(pdf_path) as pdf:
-            for i, page in enumerate(pdf):
+            for page in pdf:
                 page_text = page.get_text("text")
-                md_text += f"# Page {i + 1}\n\n"
                 if page_text.strip():
-                    md_text += page_text + "\n\n"
+                    md_text += page_text + "\n\n"  # 페이지 번호 제거
         return md_text
     except Exception:
         print(f"[오류] PDF 변환 실패 : {pdf_path}")
@@ -187,9 +186,6 @@ def build_gemma_prompt(context, question):
 """.strip()
 
 
-# -------------------------
-# 출처 추출 후 마지막에 모아서 출력하는 RAG 함수
-# -------------------------
 def rag_answer(question):
     if not retriever:
         return "DB가 없습니다. 먼저 문서를 임베딩하세요."
@@ -202,44 +198,19 @@ def rag_answer(question):
     for doc in retriever_docs:
         text = doc.page_content.strip()
         if text:
-            # 각 문서의 source를 맨 끝에 [출처: ...] 형태로 붙임
+            # 각 문서의 source를 문단 끝에 붙여 모델이 그대로 사용하도록 함
             text_with_source = f"{text}\n[출처: {doc.metadata.get('source', '출처 없음')}]"
             context_chunks.append(text_with_source)
 
     context_text = "\n\n".join(context_chunks)
     prompt = build_gemma_prompt(context_text, question)
+
+    # 모델 호출
     response = llm.invoke(prompt)
     answer = response.strip()
 
-    # 문단 마지막 출처 추출
-    source_pattern = r"\[출처:.*?\]"
-    sources_raw = re.findall(source_pattern, answer)
-
-    # 완전히 동일한 문자열만 중복 제거
-    seen = set()
-    final_sources = []
-    for s in sources_raw:
-        if s not in seen:
-            seen.add(s)
-            final_sources.append(s)
-
-    # 문단에서 출처 제거
-    cleaned_answer = re.sub(source_pattern, "", answer).strip()
-
-    if final_sources:
-        final_output = f"{cleaned_answer}\n\n{'-'*60}\n[출처]\n" + "\n".join(final_sources)
-    else:
-        final_output = f"{cleaned_answer}\n\n[출처]\n정보 없음"
-
-    return final_output
-
-def typewriter_print(text, delay=0.02):
-    for char in text:
-        sys.stdout.write(char)
-        sys.stdout.flush()
-        time.sleep(delay)
-    print()
-
+    # 더 이상 출처를 모아서 뒤에 붙이지 않음 → 모델 생성 결과만 그대로 사용
+    return answer
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -254,5 +225,5 @@ if __name__ == "__main__":
 
         answer = rag_answer(query)
         print("\n[답변]:\n")
-        typewriter_print(answer, delay=0.02)
+        print(answer)
         print("-" * 60)
