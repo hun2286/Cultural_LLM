@@ -1,5 +1,3 @@
-# 이 코드로 고도화 진행 예정
-
 import os
 import sys
 import time
@@ -18,13 +16,15 @@ from langchain_huggingface import HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 
+# ---------------------------
 # LLM 파이프라인 로드
+# ---------------------------
 def load_hf_causal_lm_pipeline(
     repo_id: str,
     model_dir: Optional[Union[str, os.PathLike]] = None,
     task: str = "text-generation",
     max_new_tokens: int = 2048,
-    temperature: float = 0.6,
+    temperature: float = 0.3,
     top_p: float = 0.9,
     top_k: int = 20,
     repetition_penalty: float = 1.2,
@@ -59,7 +59,9 @@ def load_hf_causal_lm_pipeline(
     return HuggingFacePipeline(pipeline=pipe)
 
 
+# ---------------------------
 # 환경 변수 로드
+# ---------------------------
 load_dotenv()
 
 pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/무형유산"
@@ -76,7 +78,9 @@ embedding_model = HuggingFaceEmbeddings(
 )
 
 
+# ---------------------------
 # PDF 텍스트 전처리
+# ---------------------------
 def clean_text(text):
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r',,+', ',', text)
@@ -136,7 +140,9 @@ def load_all_pdfs_recursive(root_folder):
     return all_docs
 
 
+# ---------------------------
 # VectorDB 생성/로드
+# ---------------------------
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
     print("DB 새로 생성합니다...")
     docs = load_all_pdfs_recursive(pdf_folder)
@@ -171,7 +177,9 @@ retriever = vectorstore.as_retriever(
 ) if vectorstore else None
 
 
-# Gemma-3 Prompt 빌드
+# ---------------------------
+# Gemma-3 Prompt 빌드 (출처 마지막 모아서 표기)
+# ---------------------------
 def build_gemma_prompt(context, question):
     return f"""
 <start_of_turn>system
@@ -182,10 +190,11 @@ def build_gemma_prompt(context, question):
 - 답변에는 한글을 기본으로 사용하세요.
 - 최소 100단어 이상 사용해서 답변하세요
 - 각 문단 제목은 질문형으로 만들지 말고, 'OO 소개' 또는 'OO 개요' 형태로 작성하세요.
-- 각 문단마다 반드시 사용된 PDF 출처를 [출처: PDF 제목] 형태로 문단 마지막에 표기하세요.
-- 문장 중간에 쉼표가 두 개 이상 연속되면 하나로 줄이세요.
 - 문단과 문단 사이에 불필요한 쉼표가 있으면 제거하세요.
 - 가능하면 문장 끝에는 마침표나 줄바꿈으로 마무리하세요.
+- 답변 마지막에 참고한 모든 PDF 출처를 모아서 표기하세요. 각 출처는 [출처: PDF 제목] 형태로 작성하세요.
+- 출처는 참고, 소제목, 목록, 강조 등 부가적인 표현 없이 단순히 표기만 하세요.
+- 삭제, 누락, 삭제됨, 삭제 요청 등의 안내 문장은 포함하지 마세요.
 <end_of_turn>
 <start_of_turn>user
 문서 내용:
@@ -199,7 +208,9 @@ def build_gemma_prompt(context, question):
 """.strip()
 
 
+# ---------------------------
 # RAG 질의응답
+# ---------------------------
 def rag_answer(question):
     if not retriever:
         return "DB가 없습니다. 먼저 문서를 임베딩하세요."
@@ -208,44 +219,35 @@ def rag_answer(question):
     if isinstance(retriever_docs, Document):
         retriever_docs = [retriever_docs]
 
-    # 문서 내용에 출처 붙이기
+    # 문서 내용과 출처 수집
     context_chunks = []
+    sources_set = set()
     for doc in retriever_docs:
         text = doc.page_content.strip()
         if text:
-            text_with_source = f"{text}\n[출처: {doc.metadata.get('source', '출처 없음')}]"
-            context_chunks.append(text_with_source)
+            # PDF 텍스트 내 기존 출처 제거
+            text = re.sub(r'\[출처:\s*.*?\]', '', text)
+            context_chunks.append(text)
+            source_name = doc.metadata.get('source', '출처 없음')
+            sources_set.add(source_name)
 
     context_text = "\n\n".join(context_chunks)
     prompt = build_gemma_prompt(context_text, question)
     response = llm.invoke(prompt)
     answer = response.strip()
 
-    # 중첩 출처 제거 반복
-    cleaned_answer = answer
-    while True:
-        new_answer = re.sub(r'\[출처:\s*(?:[^\[\]]+|\[[^\]]*\])*\]', '', cleaned_answer)
-        if new_answer == cleaned_answer:
-            break
-        cleaned_answer = new_answer
-
-    # 문장 끝 쉼표 제거
-    cleaned_answer = re.sub(r'\s*,\s*(\n|$)', r'\1', cleaned_answer)
+    cleaned_answer = re.sub(r'(삭제|삭제됨|누락|중간 삭제)', '', answer)
+    # LLM 출력에서 중간 출처 제거
+    cleaned_answer = re.sub(r'\[출처:\s*.*?\]', '', answer)
+    # 별표시 제거
+    cleaned_answer = re.sub(r'\*{2,}', '', cleaned_answer)
+    # 연속 줄바꿈 정리
     cleaned_answer = re.sub(r'\n{2,}', '\n\n', cleaned_answer).strip()
 
-    # 문단 끝에 남은 연속 닫는 대괄호 제거
-    cleaned_answer = re.sub(r'\]+', '', cleaned_answer)
+    # 최종 출처 리스트 생성 및 정렬
+    final_sources = [f"[출처: {s}]" for s in sorted(sources_set)]
 
-    # 출처 추출
-    source_pattern = r"\[출처:\s*(.*?)\](?=\s|$)"
-    sources_raw = re.findall(source_pattern, answer)
-
-    # 출처 문자열 그대로 사용, 중복 제거
-    all_sources = [s.strip() for s in sources_raw if s.strip()]
-    final_sources_set = set(all_sources)
-    final_sources = [f"[출처: {s}]" for s in sorted(final_sources_set)]
-
-    # 최종 출력 (출처는 한 줄씩)
+    # 최종 출력
     if final_sources:
         final_output = f"{cleaned_answer}\n\n{'-'*60}\n" + "\n".join(final_sources)
     else:
@@ -253,8 +255,9 @@ def rag_answer(question):
 
     return final_output
 
-
+# ---------------------------
 # 실행
+# ---------------------------
 if __name__ == "__main__":
     print("=" * 60)
     print("Gemma-3 RAG 질의응답 시스템")
