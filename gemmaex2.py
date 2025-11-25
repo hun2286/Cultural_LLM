@@ -1,3 +1,5 @@
+# 이 코드로 고도화 진행 예정
+
 import os
 import sys
 import time
