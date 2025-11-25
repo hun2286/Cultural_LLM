@@ -1,6 +1,4 @@
 import os
-import sys
-import time
 import fitz
 import re
 import socket
@@ -15,7 +13,6 @@ from langchain.schema import Document
 
 from langchain_huggingface import HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-
 
 # LLM 파이프라인 로드
 def load_hf_causal_lm_pipeline(
@@ -58,7 +55,6 @@ def load_hf_causal_lm_pipeline(
     )
     return HuggingFacePipeline(pipeline=pipe)
 
-
 # 환경 변수 로드
 load_dotenv()
 
@@ -75,7 +71,6 @@ embedding_model = HuggingFaceEmbeddings(
     model_name="bespin-global/klue-sroberta-base-continue-learning-by-mnr"
 )
 
-
 # PDF 텍스트 전처리
 def clean_text(text):
     # 연속 공백 제거
@@ -88,7 +83,6 @@ def clean_text(text):
     text = re.sub(r'\s*,\s*\n', '\n', text)  # 줄바꿈 직전 쉼표 제거
     # 문단 시작/끝 공백 제거
     return text.strip()
-
 
 def pdf_to_markdown(pdf_path):
     md_text = ""
@@ -103,7 +97,6 @@ def pdf_to_markdown(pdf_path):
         print(f"[오류] PDF 변환 실패 : {pdf_path}")
         return ""
 
-
 def load_pdf_safe(pdf_path):
     md_text = pdf_to_markdown(pdf_path)
     if not md_text.strip():
@@ -112,7 +105,6 @@ def load_pdf_safe(pdf_path):
         page_content=md_text,
         metadata={"source": os.path.splitext(os.path.basename(pdf_path))[0]}
     )]
-
 
 def load_all_pdfs_recursive(root_folder):
     all_docs = []
@@ -139,7 +131,6 @@ def load_all_pdfs_recursive(root_folder):
         for f in failed_pdfs:
             print("-", f)
     return all_docs
-
 
 # VectorDB 생성/로드
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
@@ -175,7 +166,6 @@ retriever = vectorstore.as_retriever(
     search_kwargs={"k": 3}
 ) if vectorstore else None
 
-
 # Gemma-3 Prompt 빌드
 def build_gemma_prompt(context, question):
     return f"""
@@ -202,7 +192,6 @@ def build_gemma_prompt(context, question):
 
 <start_of_turn>model
 """.strip()
-
 
 # RAG 질의응답
 def rag_answer(question):
