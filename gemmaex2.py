@@ -1,4 +1,6 @@
 import os
+import sys
+import time
 import fitz
 import re
 import socket
@@ -10,22 +12,22 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
-
 from langchain_huggingface import HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
+
 # LLM 파이프라인 로드
 def load_hf_causal_lm_pipeline(
-        repo_id: str,
-        model_dir: Optional[Union[str, os.PathLike]] = None,
-        task: str = "text-generation",
-        max_new_tokens: int = 2048,
-        temperature: float = 0.3,
-        top_p: float = 0.9,
-        top_k: int = 20,
-        repetition_penalty: float = 1.2,
-        torch_dtype=torch.bfloat16,
-        expose_prompt: bool = False
+    repo_id: str,
+    model_dir: Optional[Union[str, os.PathLike]] = None,
+    task: str = "text-generation",
+    max_new_tokens: int = 2048,
+    temperature: float = 0.6,
+    top_p: float = 0.9,
+    top_k: int = 20,
+    repetition_penalty: float = 1.2,
+    torch_dtype=torch.bfloat16,
+    expose_prompt: bool = False
 ):
     hostname = socket.gethostname()
     if hostname == 'ubuntu' and model_dir is None:
@@ -37,7 +39,6 @@ def load_hf_causal_lm_pipeline(
     tokenizer = AutoTokenizer.from_pretrained(
         repo_id, cache_dir=model_dir
     )
-
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
@@ -55,6 +56,7 @@ def load_hf_causal_lm_pipeline(
     )
     return HuggingFacePipeline(pipeline=pipe)
 
+
 # 환경 변수 로드
 load_dotenv()
 
@@ -71,18 +73,15 @@ embedding_model = HuggingFaceEmbeddings(
     model_name="bespin-global/klue-sroberta-base-continue-learning-by-mnr"
 )
 
+
 # PDF 텍스트 전처리
 def clean_text(text):
-    # 연속 공백 제거
     text = re.sub(r'\s+', ' ', text)
-    # 쉼표 연속 제거
     text = re.sub(r',,+', ',', text)
-    # 문장 단위 줄바꿈
     text = re.sub(r'([.!?])\s+', r'\1\n', text)
-    # 문단 끝 쉼표 제거
-    text = re.sub(r'\s*,\s*\n', '\n', text)  # 줄바꿈 직전 쉼표 제거
-    # 문단 시작/끝 공백 제거
+    text = re.sub(r'\s*,\s*\n', '\n', text)
     return text.strip()
+
 
 def pdf_to_markdown(pdf_path):
     md_text = ""
@@ -97,6 +96,7 @@ def pdf_to_markdown(pdf_path):
         print(f"[오류] PDF 변환 실패 : {pdf_path}")
         return ""
 
+
 def load_pdf_safe(pdf_path):
     md_text = pdf_to_markdown(pdf_path)
     if not md_text.strip():
@@ -105,6 +105,7 @@ def load_pdf_safe(pdf_path):
         page_content=md_text,
         metadata={"source": os.path.splitext(os.path.basename(pdf_path))[0]}
     )]
+
 
 def load_all_pdfs_recursive(root_folder):
     all_docs = []
@@ -131,6 +132,7 @@ def load_all_pdfs_recursive(root_folder):
         for f in failed_pdfs:
             print("-", f)
     return all_docs
+
 
 # VectorDB 생성/로드
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
@@ -166,6 +168,7 @@ retriever = vectorstore.as_retriever(
     search_kwargs={"k": 3}
 ) if vectorstore else None
 
+
 # Gemma-3 Prompt 빌드
 def build_gemma_prompt(context, question):
     return f"""
@@ -193,6 +196,7 @@ def build_gemma_prompt(context, question):
 <start_of_turn>model
 """.strip()
 
+
 # RAG 질의응답
 def rag_answer(question):
     if not retriever:
@@ -215,37 +219,31 @@ def rag_answer(question):
     response = llm.invoke(prompt)
     answer = response.strip()
 
-    # 문단 내부 출처 삭제를 위한 정규식 한 줄 정규식보다 안정성이 높아서 채택
+    # 중첩 출처 제거 반복
     cleaned_answer = answer
     while True:
         new_answer = re.sub(r'\[출처:\s*(?:[^\[\]]+|\[[^\]]*\])*\]', '', cleaned_answer)
-        if new_answer == cleaned_answer:  # 더 이상 제거할 게 없으면 종료
+        if new_answer == cleaned_answer:
             break
         cleaned_answer = new_answer
 
-    # 남아 있는 연속 닫는 대괄호 제거 (혹시 모를 변수에 대비해 남겨둠)
-    cleaned_answer = re.sub(r'\]+', '', cleaned_answer)
-
-    # 연속 줄바꿈 제거
+    # 문장 끝 쉼표 제거
+    cleaned_answer = re.sub(r'\s*,\s*(\n|$)', r'\1', cleaned_answer)
     cleaned_answer = re.sub(r'\n{2,}', '\n\n', cleaned_answer).strip()
 
-    # 문단 끝 출처 추출
+    # 문단 끝에 남은 연속 닫는 대괄호 제거
+    cleaned_answer = re.sub(r'\]+', '', cleaned_answer)
+
+    # 출처 추출
     source_pattern = r"\[출처:\s*(.*?)\](?=\s|$)"
     sources_raw = re.findall(source_pattern, answer)
 
-    # 쉼표/세미콜론, 괄호 처리 후 개별 출처
-    all_sources = []
-    for s in sources_raw:
-        s = re.sub(r"[&|/]", ",", s)
-        parts = re.split(r',|;', re.sub(r'\([^)]*\)', lambda m: m.group(0).replace(',', '<<comma>>'), s))
-        parts = [p.replace('<<comma>>', ',').strip() for p in parts if p.strip()]
-        all_sources.extend(parts)
-
-    # 중복 제거 및 정렬
+    # 출처 문자열 그대로 사용, 중복 제거
+    all_sources = [s.strip() for s in sources_raw if s.strip()]
     final_sources_set = set(all_sources)
     final_sources = [f"[출처: {s}]" for s in sorted(final_sources_set)]
 
-    # 최종 출력
+    # 최종 출력 (출처는 한 줄씩)
     if final_sources:
         final_output = f"{cleaned_answer}\n\n{'-'*60}\n" + "\n".join(final_sources)
     else:
