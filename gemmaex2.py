@@ -64,8 +64,8 @@ def load_hf_causal_lm_pipeline(
 # ---------------------------
 load_dotenv()
 
-pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/무형유산"
-persist_dir = "./Intangible_db"
+pdf_folder = r"/volume/bgr_storage/embedding_data/유산별 보고서/문화유산"
+persist_dir = "./Cultural_db"
 
 print("Gemma-3 로딩 중...")
 llm = load_hf_causal_lm_pipeline(
@@ -77,10 +77,7 @@ embedding_model = HuggingFaceEmbeddings(
     model_name="bespin-global/klue-sroberta-base-continue-learning-by-mnr"
 )
 
-
-# ---------------------------
 # PDF 텍스트 전처리
-# ---------------------------
 def clean_text(text):
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r',,+', ',', text)
@@ -139,10 +136,7 @@ def load_all_pdfs_recursive(root_folder):
             print("-", f)
     return all_docs
 
-
-# ---------------------------
 # VectorDB 생성/로드
-# ---------------------------
 if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
     print("DB 새로 생성합니다...")
     docs = load_all_pdfs_recursive(pdf_folder)
@@ -176,10 +170,7 @@ retriever = vectorstore.as_retriever(
     search_kwargs={"k": 3}
 ) if vectorstore else None
 
-
-# ---------------------------
 # Gemma-3 Prompt 빌드 (출처 마지막 모아서 표기)
-# ---------------------------
 def build_gemma_prompt(context, question):
     return f"""
 <start_of_turn>system
@@ -187,14 +178,12 @@ def build_gemma_prompt(context, question):
 - 문서 내용만 활용해 답변하세요.
 - 문서에 없는 내용은 '정보 없음'이라고 하세요.
 - 각 항목은 제목 내용 한 줄 빈 줄 순서로 작성하세요.
-- 답변에는 한글을 기본으로 사용하세요.
-- 최소 100단어 이상 사용해서 답변하세요
 - 각 문단 제목은 질문형으로 만들지 말고, 'OO 소개' 또는 'OO 개요' 형태로 작성하세요.
 - 문단과 문단 사이에 불필요한 쉼표가 있으면 제거하세요.
 - 가능하면 문장 끝에는 마침표나 줄바꿈으로 마무리하세요.
 - 답변 마지막에 참고한 모든 PDF 출처를 모아서 표기하세요. 각 출처는 [출처: PDF 제목] 형태로 작성하세요.
 - 출처는 참고, 소제목, 목록, 강조 등 부가적인 표현 없이 단순히 표기만 하세요.
-- 삭제, 누락, 삭제됨, 삭제 요청 등의 안내 문장은 포함하지 마세요.
+- 삭제, 누락, 삭제됨, 삭제 요청, 설명, 다음과 같습니다 등의 첫 줄에 안내 문장은 포함하지 마세요.
 <end_of_turn>
 <start_of_turn>user
 문서 내용:
@@ -207,10 +196,7 @@ def build_gemma_prompt(context, question):
 <start_of_turn>model
 """.strip()
 
-
-# ---------------------------
 # RAG 질의응답
-# ---------------------------
 def rag_answer(question):
     if not retriever:
         return "DB가 없습니다. 먼저 문서를 임베딩하세요."
@@ -255,9 +241,7 @@ def rag_answer(question):
 
     return final_output
 
-# ---------------------------
 # 실행
-# ---------------------------
 if __name__ == "__main__":
     print("=" * 60)
     print("Gemma-3 RAG 질의응답 시스템")
