@@ -1,6 +1,4 @@
 import os
-import sys
-import time
 import fitz
 import re
 import socket
@@ -26,7 +24,7 @@ def load_hf_causal_lm_pipeline(
     model_dir: Optional[Union[str, os.PathLike]] = None,
     task: str = "text-generation",
     max_new_tokens: int = 2048,
-    temperature: float = 0.6,
+    temperature: float = 0.3,
     top_p: float = 0.9,
     top_k: int = 20,
     repetition_penalty: float = 1.2,
@@ -207,6 +205,7 @@ def build_gemma_prompt(context, question):
 <start_of_turn>model
 """.strip()
 
+
 def extract_keywords(question: str):
     nouns = komoran.nouns(question)
     # 길이 1 이상인 명사만 사용
@@ -215,7 +214,6 @@ def extract_keywords(question: str):
     print(f"추출된 명사: {nouns}")
     print(f"필터 후 키워드: {keywords}")
     return keywords
-
 
 def title_matches_keywords(title: str, keywords: list):
     title_lower = title.lower()
