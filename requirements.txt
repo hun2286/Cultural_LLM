@@ -5,6 +5,7 @@ langchain-huggingface==0.3.1
 langchain-openai==0.3.28
 sentence-transformers==5.0.0
 transformers==4.53.3
+langgraph<1.0
 
 python-dotenv
 chromadb
